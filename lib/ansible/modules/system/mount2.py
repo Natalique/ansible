@@ -106,7 +106,7 @@ def mount(module, args):
     """Mount up a path."""
 
     mount_bin = module.get_bin_path('mount', required=True)
-    name = args['name']
+    path = args['path']
     fstype = args['fstype']
     src = args['src']
     opts = args['opts']
@@ -116,14 +116,14 @@ def mount(module, args):
         cmd += ['-t', fstype]
     if opts:
         cmd += ['-o', opts]
-    cmd += [src, name]
+    cmd += [src, path]
 
     rc, out, err = module.run_command(cmd)
 
     if rc == 0:
         return 0, ''
     else:
-        return rc, out+err
+        return rc, out + err
 
 
 def umount(module, path):
@@ -137,7 +137,7 @@ def umount(module, path):
     if rc == 0:
         return 0, ''
     else:
-        return rc, out+err
+        return rc, out + err
 
 
 # Note if we wanted to put this into module_utils we'd have to get permission
@@ -283,7 +283,7 @@ def main():
     module = AnsibleModule(
         argument_spec=dict(
             fstype=dict(),
-            path=dict(required=True, aliases=['name'], type='path'),
+            path=dict(required=True, type='path'),
             opts=dict(),
             src=dict(type='path'),
             state=dict(
@@ -297,16 +297,16 @@ def main():
     )
 
     # solaris args:
-    #   name, src, fstype, opts, state
+    #   path, src, fstype, opts, state
     # linux args:
-    #   name, src, fstype, opts, state
+    #   path, src, fstype, opts, state
     if get_platform().lower() == 'sunos':
         args = dict(
-            name=module.params['path'],
+            path=module.params['path'],
         )
     else:
         args = dict(
-            name=module.params['path'],
+            path=module.params['path'],
             opts='defaults',
         )
 
@@ -332,41 +332,49 @@ def main():
             args[key] = module.params[key]
 
     state = module.params['state']
-    name = module.params['path']
+    path = module.params['path']
     changed = False
 
     if state == 'unmounted':
-        if ismount(name) or is_bind_mounted(module, linux_mounts, name):
+        if ismount(path) or is_bind_mounted(module, linux_mounts, path):
             if not module.check_mode:
-                res, msg = umount(module, name)
+                res, msg = umount(module, path)
 
                 if res:
                     module.fail_json(
-                        msg="Error unmounting %s: %s" % (name, msg))
+                        msg="Error unmounting %s: %s" % (path, msg))
 
             changed = True
     elif state == 'mounted':
-        if not os.path.exists(name) and not module.check_mode:
+        if not os.path.exists(path) and not module.check_mode:
             try:
-                os.makedirs(name)
+                os.makedirs(path)
             except (OSError, IOError):
                 e = get_exception()
                 module.fail_json(
-                    msg="Error making dir %s: %s" % (name, str(e)))
+                    msg="Error making dir %s: %s" % (path, str(e)))
 
         res = 0
+        if (
+                ismount(path) or
+                is_bind_mounted(
+                    module, linux_mounts, path, args['src'], args['fstype'])):
+            changed = False
+        else:
+            changed = True
 
-        changed = True
-
-        if not module.check_mode:
-            res, msg = mount(module, args)
+            if not module.check_mode:
+                res, msg = mount(module, args)
 
         if res:
-            module.fail_json(msg="Error mounting %s: %s" % (name, msg))
+            module.fail_json(msg="Error mounting %s: %s" % (path, msg))
     else:
         module.fail_json(msg='Unexpected position reached')
 
-    module.exit_json(changed=changed, **args)
+
+    path = 'I am not crazy'
+    #module.exit_json(changed=changed, **args)
+    module.exit_json(changed=changed, path=path)
 
 
 if __name__ == '__main__':
